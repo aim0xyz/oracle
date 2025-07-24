@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>Oracle Card Reader</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #000;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #fff;
+      touch-action: manipulation;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      justify-content: flex-start;
+      padding-top: 20px;
+    }
+
+    h1 {
+      color: #ffd700;
+      margin-bottom: 20px;
+      text-shadow: 2px 2px 4px #000;
+      font-size: 1.8rem;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .card-slider {
+      overflow: hidden;
+      position: relative;
+      width: 100%;
+      height: auto;
+      cursor: grab;
+      flex-shrink: 0;
+      margin-bottom: 20px;
+    }
+    .card-slider.dragging {
+      cursor: grabbing;
+    }
+
+    .card-deck {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start; /* Explicitly set for consistency */
+      position: relative;
+      will-change: transform;
+    }
+
+    .card {
+      flex-shrink: 0;
+      width: 65vw;
+      max-width: 320px;
+      aspect-ratio: 1 / 1;
+      margin: 0 5px; /* UPDATED: Adjusted spacing */
+      border-radius: 20px;
+      position: relative;
+      transform-style: preserve-3d;
+      will-change: transform, opacity;
+      transition: transform 0.4s ease, opacity 0.4s ease;
+    }
+
+    .card .front,
+    .card .back {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      backface-visibility: hidden;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      background-size: cover;
+      background-position: center;
+      padding: 15px;
+      box-sizing: border-box;
+      transition: transform 0.6s;
+      pointer-events: none;
+      user-select: none;
+    }
+    
+    .card .front {
+      background-image: url('/images/card-back.png');
+      background-size: cover;
+      background-position: center;
+      color: white;
+      transform: rotateY(0deg);
+      border: 2px solid #557;
+    }
+
+    .card .back {
+      background-color: white;
+      color: black;
+      transform: rotateY(180deg);
+    }
+    
+    .card.flipped .front {
+      transform: rotateY(-180deg);
+    }
+
+    .card.flipped .back {
+      transform: rotateY(0deg);
+    }
+
+    .card h3 {
+      font-size: 1rem;
+      margin: 0;
+      text-align: center;
+      text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+    }
+
+    .controls-wrapper {
+        text-align: center;
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        padding: 0 15px;
+    }
+
+    .controls {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    button {
+      padding: 12px 24px;
+      background: linear-gradient(45deg, #ffd700, #ffa500);
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      box-shadow: 0 5px 10px rgba(0,0,0,0.3);
+      transition: all 0.3s;
+      font-size: 1rem;
+      width: 200px;
+    }
+
+    button:hover {
+      background: linear-gradient(45deg, #ffa500, #ffd700);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 15px rgba(0,0,0,0.4);
+    }
+
+    .card-details {
+      padding: 15px;
+      background-color: rgba(255, 215, 0, 0.1);
+      border-radius: 10px;
+      display: none;
+      animation: fadeIn 0.5s ease-in-out;
+      text-align: center;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .more-insight-link {
+      display: none;
+      color: #ffd700;
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: 0.9rem;
+      text-align: center;
+      padding: 10px;
+    }
+
+    .popup {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      z-index: 1000;
+    }
+
+    .popup.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .popup-content {
+      background-color: #fff;
+      color: #000;
+      padding: 20px;
+      border-radius: 15px;
+      max-width: 90%;
+      max-height: 80%;
+      overflow-y: auto;
+      text-align: left;
+      position: relative;
+    }
+
+    .popup-content .close-btn {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      font-size: 20px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Oracle Card Reader</h1>
+
+  <div class="card-slider" id="cardSlider">
+    <div id="cardDeck" class="card-deck"></div>
+  </div>
+
+  <div class="controls-wrapper">
+    <div id="cardDetails" class="card-details">
+      <h2>Card: <span id="cardName"></span></h2>
+      <p>Meaning: <span id="cardMeaning"></span></p>
+    </div>
+    <div class="controls">
+      <div class="more-insight-link" onclick="showPopup()">More Insight...</div>
+      <button onclick="pickRandomCard()">Pick for Me</button>
+    </div>
+  </div>
+
+
+  <div class="popup" id="popup">
+    <div class="popup-content">
+      <span class="close-btn" onclick="hidePopup()">&times;</span>
+      <h2>Deep Insight</h2>
+      <p>This is the additional insight text that appears when the user clicks the "More Insight" link. It contains deeper meanings and guidance based on the cards you've revealed.</p>
+      <p>Reflect on how these insights apply to your current situation and what actions they might suggest for you.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  // --- Data & Constants ---
+  const deck = [
+    {
+      id: 1,
+      name: 'Nature',
+      frontImage: '/images/nature.png',
+      meaning: 'This card represents the self, consciousness, and the challenge of identity.'
+    },
+    {
+      id: 2,
+      name: 'Connection',
+      frontImage: '/images/connection.jpg',
+      meaning: 'This card represents compassion, acceptance, and the power of connection.'
+    },
+    {
+      id: 3,
+      name: 'Authenticity',
+      frontImage: '/images/authenticity.png',
+      meaning: 'This card represents resilience, courage, and overcoming adversity.'
+    },
+    {
+      id: 4,
+      name: 'Move Body',
+      frontImage: '/images/movebody.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+    {
+      id: 5,
+      name: 'Right Now',
+      frontImage: '/images/rightnow.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 6,
+      name: 'Feminine',
+      frontImage: '/images/feminine.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 7,
+      name: 'Deatachment',
+      frontImage: '/images/deatachment.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 8,
+      name: 'Oneness',
+      frontImage: '/images/movebody.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 9,
+      name: 'Inner Child',
+      frontImage: '/images/innerchild.png',
+      meaning: 'This card represents the self, consciousness, and the challenge of identity.'
+    },
+    {
+      id: 10,
+      name: 'Intuition',
+      frontImage: '/images/intuition.jpg',
+      meaning: 'This card represents compassion, acceptance, and the power of connection.'
+    },
+    {
+      id: 11,
+      name: 'Compassion',
+      frontImage: '/images/compassion.png',
+      meaning: 'This card represents resilience, courage, and overcoming adversity.'
+    },
+    {
+      id: 12,
+      name: 'Power',
+      frontImage: '/images/power.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+    {
+      id: 13,
+      name: 'Receive',
+      frontImage: '/images/receive.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 14,
+      name: 'Nourish',
+      frontImage: '/images/nourish.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 15,
+      name: 'Observe your Body',
+      frontImage: '/images/observeyourbody.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 16,
+      name: 'Law of mirroring',
+      frontImage: '/images/lawofmirroring.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 17,
+      name: 'Stillness',
+      frontImage: '/images/stillness.png',
+      meaning: 'This card represents the self, consciousness, and the challenge of identity.'
+    },
+    {
+      id: 18,
+      name: 'Emotion',
+      frontImage: '/images/emotion.jpg',
+      meaning: 'This card represents compassion, acceptance, and the power of connection.'
+    },
+    {
+      id: 19,
+      name: 'Forgiveness',
+      frontImage: '/images/forgiveness.png',
+      meaning: 'This card represents resilience, courage, and overcoming adversity.'
+    },
+    {
+      id: 20,
+      name: 'Progress',
+      frontImage: '/images/progress.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+    {
+      id: 21,
+      name: 'Service',
+      frontImage: '/images/service.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 22,
+      name: 'Breath',
+      frontImage: '/images/breath.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 23,
+      name: 'Illusions',
+      frontImage: '/images/illusions.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 24,
+      name: 'Ego',
+      frontImage: '/images/ego.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	},
+    {
+      id: 25,
+      name: 'Water',
+      frontImage: '/images/water.jpg',
+      meaning: 'This card represents compassion, acceptance, and the power of connection.'
+    },
+    {
+      id: 26,
+      name: 'Masculine',
+      frontImage: '/images/masculine.png',
+      meaning: 'This card represents resilience, courage, and overcoming adversity.'
+    },
+    {
+      id: 27,
+      name: 'Kindness',
+      frontImage: '/images/kindness.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+    {
+      id: 28,
+      name: 'Urges',
+      frontImage: '/images/urges.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 29,
+      name: 'Grounding',
+      frontImage: '/images/grounding.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 30,
+      name: 'Abundance',
+      frontImage: '/images/abundance.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 31,
+      name: 'Graditude',
+      frontImage: '/images/graditude.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 32,
+      name: 'No Judgement',
+      frontImage: '/images/nojudgement.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 33,
+      name: 'Rest',
+      frontImage: '/images/rest.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 34,
+      name: 'Selflove',
+      frontImage: '/images/selflove.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+	{
+      id: 35,
+      name: 'No Resostance',
+      frontImage: '/images/noresistence.png',
+      meaning: 'A new chapter is starting. Embrace the change and opportunity for growth.'
+    },
+    // ... Add all 35 of your cards here ...
+  ];
+
+  const CLONE_COUNT = 5; // Number of cards to clone on each side for the loop effect
+
+  // --- DOM Elements ---
+  const cardSlider = document.getElementById('cardSlider');
+  const cardDeck = document.getElementById('cardDeck');
+  const cardDetails = document.getElementById('cardDetails');
+  const cardNameEl = document.getElementById('cardName');
+  const cardMeaningEl = document.getElementById('cardMeaning');
+  const popup = document.getElementById('popup');
+  const moreInsightLink = document.querySelector('.more-insight-link');
+  
+  // --- State Variables ---
+  let cards = [];
+  let domCenterIndex; // Will be set in initDeck
+  let isDragging = false;
+  let wasDragged = false;
+  let startX = 0;
+  let currentTranslate = 0;
+  let startTranslate = 0;
+  let velocity = 0;
+  let rafId = null;
+
+  // --- Initialization ---
+  function initDeck() {
+    // --- THIS IS THE FIX ---
+    // Ensure the number of clones is not greater than the number of cards in the deck.
+    // This prevents errors when the deck is small.
+    const safeCloneCount = Math.min(CLONE_COUNT, deck.length);
+
+    // Create card elements with clones for infinite loop
+    const cardsToCreate = [
+        ...deck.slice(-safeCloneCount), // Clones from the end
+        ...deck,                        // The actual deck
+        ...deck.slice(0, safeCloneCount)  // Clones from the start
+    ];
+
+    cardsToCreate.forEach((cardData, i) => {
+        // Determine the original index from the main deck
+        const originalIndex = (i < safeCloneCount) ? deck.length - safeCloneCount + i 
+                            : (i >= safeCloneCount + deck.length) ? i - (safeCloneCount + deck.length)
+                            : i - safeCloneCount;
+        
+        const cardInfo = deck[originalIndex];
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'card';
+        wrapper.dataset.originalIndex = originalIndex; // Store original index for data lookup
+
+        const front = document.createElement('div');
+        front.className = 'front';
+        front.innerHTML = `<h3>Oracle Card</h3>`;
+
+        const back = document.createElement('div');
+        back.className = 'back';
+        back.style.backgroundImage = `url('images/${cardInfo.frontImage}')`;
+        back.innerHTML = `<h3>${cardInfo.name}</h3>`;
+
+        wrapper.append(front, back);
+        cardDeck.appendChild(wrapper);
+    });
+    
+    cards = Array.from(cardDeck.children);
+    // Set the initial center index based on the safe clone count
+    domCenterIndex = safeCloneCount + Math.floor(deck.length / 2);
+
+    addEventListeners();
+    setTimeout(() => slideToCard(domCenterIndex, true), 100);
+    window.addEventListener('resize', () => slideToCard(domCenterIndex, true));
+  }
+  
+  // --- Event Handling ---
+  function addEventListeners() {
+    cardSlider.addEventListener('mousedown', dragStart);
+    cardSlider.addEventListener('touchstart', dragStart, { passive: true });
+    window.addEventListener('mousemove', dragMove);
+    window.addEventListener('touchmove', dragMove, { passive: true });
+    window.addEventListener('mouseup', dragEnd);
+    window.addEventListener('touchend', dragEnd);
+    window.addEventListener('mouseleave', dragEnd);
+    cardDeck.addEventListener('click', handleCardClick);
+    cardDeck.addEventListener('transitionend', checkForLoopJump);
+  }
+
+  function getPointerX(e) {
+    return e.type.includes('mouse') ? e.pageX : e.touches[0].pageX;
+  }
+
+  function dragStart(e) {
+    if (e.target.closest('button, .more-insight-link')) return;
+    cancelAnimationFrame(rafId);
+    isDragging = true;
+    wasDragged = false;
+    cardSlider.classList.add('dragging');
+    startX = getPointerX(e);
+    startTranslate = currentTranslate;
+    velocity = 0;
+    cardDeck.style.transition = 'none';
+  }
+
+  function dragMove(e) {
+    if (!isDragging) return;
+    const currentX = getPointerX(e);
+    const dragDistance = currentX - startX;
+    if (Math.abs(dragDistance) > 5 && !wasDragged) {
+      wasDragged = true;
+    }
+    const prevTranslate = currentTranslate;
+    currentTranslate = startTranslate + dragDistance;
+    velocity = currentTranslate - prevTranslate;
+    setDeckPosition(currentTranslate);
+    updateCardStylesOnTheFly();
+  }
+
+  function dragEnd() {
+    if (!isDragging) return;
+    isDragging = false;
+    cardSlider.classList.remove('dragging');
+    if (!wasDragged) return;
+    rafId = requestAnimationFrame(momentumScroll);
+  }
+
+  function handleCardClick(e) {
+    if (wasDragged) return;
+    const cardElement = e.target.closest('.card');
+    if (cardElement) {
+        const clickedDomIndex = cards.indexOf(cardElement);
+        tryReveal(clickedDomIndex);
+    }
+  }
+
+  // --- Animation and Positioning ---
+  function momentumScroll() {
+    currentTranslate += velocity;
+    velocity *= 0.97;
+    setDeckPosition(currentTranslate);
+    updateCardStylesOnTheFly();
+    if (Math.abs(velocity) < 0.1) {
+      cancelAnimationFrame(rafId);
+      snapToNearestCard();
+    } else {
+      rafId = requestAnimationFrame(momentumScroll);
+    }
+  }
+
+  function getCardTotalWidth() {
+    if (cards.length === 0) return 0;
+    const style = window.getComputedStyle(cards[0]);
+    const margin = parseFloat(style.marginLeft) + parseFloat(style.marginRight);
+    return cards[0].offsetWidth + margin;
+  }
+
+  function snapToNearestCard() {
+    const cardTotalWidth = getCardTotalWidth();
+    if (cardTotalWidth === 0) return; // Prevent division by zero if cards aren't loaded
+    const containerWidth = cardSlider.offsetWidth;
+    const cardWidth = cards[0].offsetWidth;
+    
+    const offsetToCenter = (containerWidth / 2) - (cardWidth / 2);
+    const nearestDomIndex = Math.round((offsetToCenter - currentTranslate) / cardTotalWidth);
+    const targetDomIndex = Math.max(0, Math.min(cards.length - 1, nearestDomIndex));
+    
+    slideToCard(targetDomIndex, false, 1.0, 'ease-in-out');
+  }
+
+  function slideToCard(targetDomIndex, instant = false, duration = 0.4, timingFunction = 'ease-out') {
+    domCenterIndex = targetDomIndex;
+    if (!cards[targetDomIndex]) return;
+
+    const cardTotalWidth = getCardTotalWidth();
+    const cardWidth = cards[targetDomIndex].offsetWidth;
+    const containerWidth = cardSlider.offsetWidth;
+    
+    const offsetToCenter = (containerWidth / 2) - (cardWidth / 2);
+    const targetTranslate = offsetToCenter - (targetDomIndex * cardTotalWidth);
+    
+    cardDeck.style.transition = instant ? 'none' : `transform ${duration}s ${timingFunction}`;
+    
+    setDeckPosition(targetTranslate);
+    currentTranslate = targetTranslate;
+    
+    updateAllCardStylesFinal();
+    updateControlsVisibility();
+  }
+  
+  function checkForLoopJump() {
+    const safeCloneCount = Math.min(CLONE_COUNT, deck.length);
+    if (domCenterIndex < safeCloneCount) {
+        const newDomIndex = domCenterIndex + deck.length;
+        slideToCard(newDomIndex, true);
+    } else if (domCenterIndex >= safeCloneCount + deck.length) {
+        const newDomIndex = domCenterIndex - deck.length;
+        slideToCard(newDomIndex, true);
+    }
+  }
+
+  function setDeckPosition(posX) {
+    cardDeck.style.transform = `translateX(${posX}px)`;
+  }
+
+  // --- Card Styling and Controls ---
+  function updateAllCardStylesFinal() {
+    cards.forEach((card, index) => {
+      card.style.transition = 'transform 0.4s ease, opacity 0.4s ease';
+      if (index === domCenterIndex) {
+        card.style.transform = 'scale(1)';
+        card.style.opacity = '1';
+      } else {
+        card.style.transform = 'scale(0.85)';
+        card.style.opacity = '0.7';
+      }
+    });
+  }
+
+  function updateCardStylesOnTheFly() {
+    const cardTotalWidth = getCardTotalWidth();
+    if (cardTotalWidth === 0) return;
+    const viewportCenter = cardSlider.offsetWidth / 2;
+    cards.forEach((card, index) => {
+        card.style.transition = 'none';
+        const cardCenterInDeck = (index * cardTotalWidth) + (card.offsetWidth / 2);
+        const cardCenterInViewport = currentTranslate + cardCenterInDeck;
+        const distanceFromCenter = Math.abs(viewportCenter - cardCenterInViewport);
+        
+        const maxDist = viewportCenter;
+        const scaleReduction = Math.min(1, distanceFromCenter / maxDist) * 0.15;
+        const scale = 1 - scaleReduction;
+        const opacity = 1 - Math.min(1, distanceFromCenter / maxDist) * 0.3;
+
+        card.style.transform = `scale(${scale})`;
+        card.style.opacity = `${opacity}`;
+    });
+  }
+  
+  function updateControlsVisibility() {
+      const centeredCard = cards[domCenterIndex];
+      if (centeredCard && centeredCard.classList.contains('flipped')) {
+          const originalIndex = parseInt(centeredCard.dataset.originalIndex, 10);
+          const cardData = deck[originalIndex];
+          cardNameEl.textContent = cardData.name;
+          cardMeaningEl.textContent = cardData.meaning;
+          cardDetails.style.display = 'block';
+          moreInsightLink.style.display = 'inline-block';
+      } else {
+          cardDetails.style.display = 'none';
+          moreInsightLink.style.display = 'none';
+      }
+  }
+
+  // --- Core Functionality ---
+  function tryReveal(clickedDomIndex) {
+    if (clickedDomIndex !== domCenterIndex) {
+      slideToCard(clickedDomIndex, false, 1.0, 'ease-in-out');
+      return;
+    }
+    const cardElement = cards[clickedDomIndex];
+    cardElement.classList.toggle('flipped');
+    updateControlsVisibility();
+  }
+
+  function pickRandomCard() {
+    const randomOriginalIndex = Math.floor(Math.random() * deck.length);
+    const safeCloneCount = Math.min(CLONE_COUNT, deck.length);
+    const targetDomIndex = randomOriginalIndex + safeCloneCount;
+    if (targetDomIndex !== domCenterIndex) {
+       slideToCard(targetDomIndex, false, 2.0, 'ease-in-out');
+    }
+  }
+
+  // --- Popup Controls ---
+  function showPopup() {
+    popup.classList.add('active');
+  }
+
+  function hidePopup() {
+    popup.classList.remove('active');
+  }
+
+  popup.addEventListener('click', (e) => {
+    if (e.target === popup) hidePopup();
+  });
+
+  // --- Start the App ---
+  window.onload = initDeck;
+</script>
+
+</body>
+</html>
